@@ -1,15 +1,21 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
+const dbUrl = process.env.DATABASE_URL || '';
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false }
+  connectionString: dbUrl,
+  ssl: dbUrl.includes('localhost') || dbUrl === '' ? false : { rejectUnauthorized: false }
 });
 
 async function initDB() {
+  if (!process.env.DATABASE_URL) {
+    console.error('❌ ERROR: La variable DATABASE_URL no está definida en Railway.');
+    return;
+  }
+  
   const client = await pool.connect();
   try {
-    // Tabla de contadores
     await client.query(`
       CREATE TABLE IF NOT EXISTS staff_sanctions (
         user_id VARCHAR(32) PRIMARY KEY,
@@ -18,7 +24,6 @@ async function initDB() {
       );
     `);
 
-    // Tabla de historial de eventos
     await client.query(`
       CREATE TABLE IF NOT EXISTS sanction_logs (
         id SERIAL PRIMARY KEY,
@@ -41,14 +46,14 @@ async function initDB() {
 initDB().catch(err => console.error('❌ Error iniciando base de datos:', err));
 
 module.exports = {
-  // Obtener sanciones actuales
   getStaff: async (userId) => {
+    if (!process.env.DATABASE_URL) return { warns: 0, strikes: 0 };
     const res = await pool.query('SELECT warns, strikes FROM staff_sanctions WHERE user_id = $1', [userId]);
     return res.rows[0] || { warns: 0, strikes: 0 };
   },
 
-  // Actualizar contadores
   updateStaff: async (userId, warns, strikes) => {
+    if (!process.env.DATABASE_URL) return;
     await pool.query(
       `INSERT INTO staff_sanctions (user_id, warns, strikes) 
        VALUES ($1, $2, $3) 
@@ -58,8 +63,8 @@ module.exports = {
     );
   },
 
-  // Registrar en el historial
   addLog: async (targetId, modId, ign, actionType, warnsChanged, strikesChanged, reason) => {
+    if (!process.env.DATABASE_URL) return;
     await pool.query(
       `INSERT INTO sanction_logs (target_id, mod_id, ign, action_type, warns_changed, strikes_changed, reason) 
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -67,8 +72,8 @@ module.exports = {
     );
   },
 
-  // Consultar historial
   getHistory: async (targetId) => {
+    if (!process.env.DATABASE_URL) return [];
     const res = await pool.query(
       'SELECT * FROM sanction_logs WHERE target_id = $1 ORDER BY created_at DESC LIMIT 10',
       [targetId]
